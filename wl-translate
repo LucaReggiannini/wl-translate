@@ -1,0 +1,197 @@
+#!/bin/sh
+
+text=""
+sourceLanguage="auto"
+destinationLanguage="en"
+
+# 0: prints to stdout
+# 1: send system notification
+notify=0
+
+# 0: no action
+# 1: copy to system clipboard
+copy=0 
+
+# wl-translate will check for input from 3 sources; in order:
+# 1. stdin
+# 2. parameter "-t --text"
+# 3. system clipboard
+# If one of the source is detected set "textRead" to 1 and skip other sources
+textRead=0 #
+
+function _read() {
+# Read every line from stdin
+	while read line
+		do
+			text="$text$line"
+		done < "${1:-/dev/stdin}"
+}
+
+function help() {
+echo '
+wl-translate
+
+SYNOPSIS: 
+	wl-translate [-s source] [-d destination] [-t text] [--notify] [--copy]
+
+DESCRIPTION:
+	Uses Google Translate API to translate desired text.
+	If no text is given will automatically get it form clipboard.
+
+OPTIONS:
+	-h --help
+			Show the manual
+
+	-s --source
+			Language from which to translate the text.
+			Default is "auto" (automatic recognition).
+
+	-d --destination
+			Language to translate the text into.
+			Default is English
+
+	-t --text
+			Text to translate. 
+			If not text is given get content from Clipboard.
+			If this script is started via Pipe this parameter is ignored: text is read via stdin
+
+	-n --notify
+			Send translated text to system notification
+
+	-c --copy
+			Copy translated text to clipboard
+
+NOTE:
+	This tool is intended to work with Wayland (wl-clipboard package is needed)!
+
+EXAMPLES:
+	wl-translate -t "buongiorno" && wl-translate -t "buenos dias"
+		good morning
+		good morning
+
+	wl-translate -s en -d ru -t "good morning"
+		доброе утро
+
+	echo "ciao come stai?" | wl-translate -d es
+		¿Hola como estas?
+
+	echo "ciao...
+	ecome stai?" | wl-translate -d de
+
+		Hi, wie geht es dir?
+	cat fileToTranslate.txt | translate
+'
+}
+
+
+if [ ! -t 0 ]; then
+# Check if file descriptor "0" (stdin) is open and associated with a terminal device
+# if not get text from pipe
+	_read
+	if [ -z "$text" ]; then
+		>&2 echo "Error: stdin is empty"
+	else
+		textRead=1
+	fi
+fi
+
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-h|--help)
+			help
+			exit 0
+			;;
+		-s|--source)
+			sourceLanguage="$2"
+			shift
+			shift
+			;;
+		-d|--destination)
+			destinationLanguage="$2"
+			shift
+			shift
+			;;
+		-t|--text)
+			if [ ! -t 0 ]; then 
+				>&2 echo 'Warning: input from pipe; ignoring option "-t, --text"'
+			else
+				text="$2"
+				textRead=1
+			fi
+			shift
+			shift
+			;;
+		-n|--notify)
+			notify=1
+			shift
+			;;
+		-c|--copy)
+			copy=1
+			shift
+			;;
+		-*|--*)
+			help
+			>&2 echo "Error: unknown option $1"
+			exit 1
+			;;
+		*)
+			POSITIONAL_ARGS+=("$1")
+			shift
+			;;
+	esac
+done
+
+set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
+
+if [ $textRead == 0 ]; then
+# Get text from system clipboard as last source 
+	text="$(wl-paste)"
+fi
+
+if [ -z "$text" ]; then
+	if [ "$notify" == 0 ]; then
+		>&2 echo "Error: can't get any text"
+	else
+		notify-send "Error: can't get any text"
+	fi
+	exit 1
+fi
+
+translation=$(curl --get --silent \
+"http://translate.googleapis.com/translate_a/single" \
+--data-urlencode "client=gtx" \
+--data-urlencode "sl=$sourceLanguage" \
+--data-urlencode "tl=$destinationLanguage" \
+--data-urlencode "dt=t" \
+--data-urlencode "q=$text" \
+| python -c '
+
+import sys, json
+
+text=""
+for line in sys.stdin:
+	text+=line
+
+try:
+	jsonObject = json.loads(text, strict=False)
+	for index in range(len(jsonObject[0])):
+		try:
+			print(jsonObject[0][index][0], end="", flush=True)
+		except:
+			sys.stderr.write("Error: failed to parse JSON at index [0]", index, "[0]")
+except:
+	sys.stderr.write("Error: failed to load JSON")'
+
+)
+
+if [ "$notify" == 0 ]; then
+	echo "$translation"
+else
+	notify-send "$translation"
+fi
+
+if [ "$copy" == 1 ]; then
+	wl-copy "$translation"
+fi
