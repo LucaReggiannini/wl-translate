@@ -147,7 +147,11 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
 if [ $textRead == 0 ]; then
 # Get text from system clipboard as last source 
-	text="$(wl-paste)"
+	if [ "$XDG_SESSION_TYPE" == "wayland" ]; then
+		text="$(wl-paste)"
+	elif [ "$XDG_SESSION_TYPE" == "x11" ]; then
+		text=$(xclip -selection clipboard -o)
+	fi
 fi
 
 if [ -z "$text" ]; then
@@ -193,5 +197,9 @@ else
 fi
 
 if [ "$copy" == 1 ]; then
-	wl-copy "$translation"
+	if [ "$XDG_SESSION_TYPE" == "wayland" ]; then
+		wl-copy "$translation"
+	elif [ "$XDG_SESSION_TYPE" == "x11" ]; then
+		echo -n "$translation" | xclip -selection clipboard
+	fi
 fi
