@@ -10,7 +10,7 @@ Following packages are needed:
 - **python**
 - **notify-send**
 
-# How i use it?
+# How do i use it?
 
 I have two custom shortcuts on Gnome: one for _italian-english_ and one for _english-italian_ translation:
 
