@@ -37,6 +37,11 @@ SYNOPSIS:
 DESCRIPTION:
 	Uses Google Translate API to translate desired text.
 	If no text is given will automatically get it form clipboard.
+	Dependencies:
+		xclip (on X11) or wl-clipboard (on wayland)
+		curl
+		python
+		notify-send
 
 OPTIONS:
 	-h --help
